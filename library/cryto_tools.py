@@ -2,7 +2,7 @@
 
 import os
 import json
-import hashlib
+import base64
 from datetime import datetime
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, rsa, padding
@@ -19,55 +19,6 @@ def generate_rsa_key_pair():
     )
     public_key = private_key.public_key()
     return private_key, public_key
-
-# Transaction 클래스 정의
-'''
-class SampleValidator:
-    def __init__(self, 
-                    sender_id, 
-                    recipient_id, 
-                    hash, 
-                    timestamp=None, 
-                    signature=None
-                    ):
-        self.sender_id = sender_id
-        self.recipient_id = recipient_id
-        self.hash = hash
-        self.timestamp = timestamp if timestamp else datetime.utcnow().isoformat()
-        self.signature = signature
-
-        if prev_hash:
-            self.current_hash = self.calculate_hash()
-
-    def to_dict(self):
-        tx_dict = {
-            'sender_id': self.sender_id,
-            'recipient_id': self.recipient_id,
-            'timestamp': self.timestamp,
-            'hash': self.hash,
-            'signature': self.signature if self.signature else None,
-        }
-        if hasattr(self, 'current_hash'):
-            tx_dict['current_hash'] = self.current_hash
-        return tx_dict
-
-    def put_hash(self, prev_hash):
-        self.prev_hash = prev_hash
-        self.current_hash = self.calculate_hash()
-
-    def calculate_hash(self):
-
-        if self.prev_hash is None:
-            return None
-
-        tx_dict = self.to_dict()
-        # 서명과 current_hash는 해시 계산에서 제외
-        tx_dict_copy = tx_dict.copy()
-        tx_dict_copy['signature'] = None
-        tx_dict_copy['current_hash'] = None
-        tx_string = json.dumps(tx_dict_copy, sort_keys=True)
-        return hashlib.sha256(tx_string.encode()).hexdigest()
-'''
 
 # 공개키/비밀키 로드 및 저장 함수
 def save_private_key(private_key, filename):
@@ -98,6 +49,61 @@ def load_public_key(filename):
         pem_data = f.read()
     public_key = serialization.load_pem_public_key(pem_data)
     return public_key
+
+def convert_private_key_to_pem(private_key):
+    """Convert private key to PEM format string"""
+    return private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    ).decode('utf-8')
+
+def convert_public_key_to_pem(public_key):
+    """Convert public key to PEM format string"""
+    return public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    ).decode('utf-8')
+
+def load_private_key_from_pem(pem_string):
+    """Load private key from PEM format string"""
+    return serialization.load_pem_private_key(
+        pem_string.encode(),
+        password=None
+    )
+
+def load_public_key_from_pem(pem_string):
+    """Load public key from PEM format string"""
+    return serialization.load_pem_public_key(
+        pem_string.encode()
+    )
+
+def encrypt_server_public_key(server_public_key, client_public_key_pem):
+    """Encrypt server public key with client's public key"""
+    client_public_key = load_public_key_from_pem(client_public_key_pem)
+    sp_public_key_pem = convert_public_key_to_pem(server_public_key)
+    
+    encrypted_sp_key = client_public_key.encrypt(
+        sp_public_key_pem.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return base64.b64encode(encrypted_sp_key).decode()
+
+def decrypt_server_public_key(encrypted_sp_key_base64, private_key):
+    """Decrypt server public key using client's private key"""
+    encrypted_sp_key = base64.b64decode(encrypted_sp_key_base64)
+    return private_key.decrypt(
+        encrypted_sp_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
 
 # 대칭키로 transaction 정보 암호화
 def encrypt_transaction_data(transaction, symmetric_key, output_format='bytes'):

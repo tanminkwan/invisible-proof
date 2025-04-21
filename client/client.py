@@ -1,15 +1,42 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import requests
+from dotenv import load_dotenv, set_key
+from library.cryto_tools import (
+    generate_rsa_key_pair,
+    convert_private_key_to_pem,
+    convert_public_key_to_pem,
+    decrypt_server_public_key
+)
+
+# Load environment variables
+load_dotenv()
 
 # FastAPI 서버 URL
-SERVER_URL = "http://127.0.0.1:8000"
+SERVER_URL = "http://127.0.0.1:8000/api/v1"
 
 class WatermarkApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Watermark Application")
+
+        # Add API key entry and exchange button at top
+        self.api_frame = tk.Frame(root)
+        self.api_frame.pack(pady=5)
+        
+        self.api_label = tk.Label(self.api_frame, text="API Key:")
+        self.api_label.pack(side=tk.LEFT, padx=5)
+        
+        self.api_entry = tk.Entry(self.api_frame, width=40)
+        self.api_entry.pack(side=tk.LEFT, padx=5)
+        
+        self.exchange_button = tk.Button(self.api_frame, text="서버와 Key 교환", command=self.exchange_keys)
+        self.exchange_button.pack(side=tk.LEFT, padx=5)
 
         # Add a frame to contain the image
         self.image_frame = tk.Frame(root, width=600, height=400)
@@ -95,6 +122,51 @@ class WatermarkApp:
                 messagebox.showerror("Error", f"Failed to extract watermark: {response.text}")
         except Exception as e:
             self.status_label.config(text="Status: Error Occurred", fg="red")
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+    def exchange_keys(self):
+        """Perform key exchange with server"""
+        try:
+            app_key = self.api_entry.get().strip()
+            if not app_key:
+                messagebox.showerror("Error", "Please enter API key")
+                return
+
+            user_id = os.getenv("USER_ID")
+            if not user_id:
+                messagebox.showerror("Error", "USER_ID not found in .env")
+                return
+
+            # Generate client keys
+            private_key, public_key = generate_rsa_key_pair()
+            
+            # Convert keys to PEM format and save to .env
+            env_path = ".env"
+            set_key(env_path, "USER_PRIVATE_KEY", convert_private_key_to_pem(private_key))
+            public_key_pem = convert_public_key_to_pem(public_key)
+            
+            # Send to server using JSON body instead of query params
+            response = requests.put(
+                f"{SERVER_URL}/user/{user_id}",
+                json={
+                    "app_key": app_key,
+                    "user_public_key": public_key_pem
+                }
+            )
+            
+            if response.status_code == 200:
+                # Decrypt and save server's public key
+                sp_public_key_pem = response.json()["sp_public_key"]
+                set_key(env_path, "SERVER_PUBLIC_KEY", sp_public_key_pem)
+                
+                self.status_label.config(text="Status: Key Exchange Successful", fg="green")
+                messagebox.showinfo("Success", "Key exchange completed successfully")
+            else:
+                self.status_label.config(text="Status: Key Exchange Failed", fg="red")
+                messagebox.showerror("Error", f"Key exchange failed: {response.text}")
+
+        except Exception as e:
+            self.status_label.config(text="Status: Key Exchange Error", fg="red")
             messagebox.showerror("Error", f"An error occurred: {e}")
 
 
