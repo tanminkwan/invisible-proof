@@ -27,7 +27,7 @@ def extract_watermark(image_path, len_wm=32):
 if __name__ == "__main__":
     input_image = "3races2.jpg"         # 원본 이미지 파일 (예: test.png)
     output_image = "test_wm.jpg"       # 워터마크 삽입 후 저장할 파일
-    watermark_text = "Hellow Tanminkwan"            
+    watermark_text = "Certified by Tanminkwan Foundation"            
     
     len_wm = embed_watermark(input_image, watermark_text, output_image)
     extract_watermark(output_image, len_wm)
