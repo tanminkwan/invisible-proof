@@ -7,12 +7,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import requests
+import json
 from dotenv import load_dotenv, set_key
 from library.cryto_tools import (
     generate_rsa_key_pair,
     convert_private_key_to_pem,
     convert_public_key_to_pem,
-    decrypt_server_public_key
+    decrypt_server_public_key,
+    prepare_crypto_package
 )
 
 # Load environment variables
@@ -86,12 +88,35 @@ class WatermarkApp:
             messagebox.showerror("Error", "No image uploaded!")
             return
 
-        watermark_text = "Welcome to Tanminkwan World"
-        files = {"image": open(self.image_path, "rb")}
-        data = {"watermark_text": watermark_text}
-
         try:
-            response = requests.post(f"{SERVER_URL}/embed-watermark/", files=files, data=data)
+            user_id = os.getenv("USER_ID")
+            if not user_id:
+                messagebox.showerror("Error", "USER_ID not found in .env")
+                return
+
+            # Prepare crypto package
+            user_priv_pem = os.getenv("USER_PRIVATE_KEY")
+            server_pub_pem = os.getenv("SERVER_PUBLIC_KEY")
+            if not all([user_priv_pem, server_pub_pem]):
+                messagebox.showerror("Error", "Missing required keys in .env")
+                return
+
+            crypto_package = prepare_crypto_package(
+                self.image_path,
+                user_id,
+                user_priv_pem,
+                server_pub_pem
+            )
+
+            # Send request with crypto package
+            files = {"image": open(self.image_path, "rb")}
+            data = {
+                "user_id": user_id,
+                "crypto_package": json.dumps(crypto_package)
+            }
+
+            response = requests.post(f"{SERVER_URL}/watermark/", files=files, data=data)
+            
             if response.status_code == 200:
                 with open("watermarked_image.jpg", "wb") as f:
                     f.write(response.content)
@@ -100,6 +125,7 @@ class WatermarkApp:
             else:
                 self.status_label.config(text="Status: Failed to Embed Watermark", fg="red")
                 messagebox.showerror("Error", f"Failed to embed watermark: {response.text}")
+
         except Exception as e:
             self.status_label.config(text="Status: Error Occurred", fg="red")
             messagebox.showerror("Error", f"An error occurred: {e}")

@@ -10,13 +10,12 @@ from library.cryto_tools import (
     convert_private_key_to_pem,
     convert_public_key_to_pem,
     load_private_key_from_pem,
-    load_public_key_from_pem,
-    encrypt_server_public_key
+    verify_crypto_package
 )
-from urllib.parse import unquote
 import shutil
 import os
 import uuid
+import hashlib
 from pydantic import BaseModel
 import logging
 
@@ -24,15 +23,18 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv()
+env_path = os.path.join(os.path.dirname(__file__), ".env")
+load_dotenv(dotenv_path=env_path)
 
-# Global variables for server keys
+# Global variables for server keys and watermark passwords
 SERVER_PRIVATE_KEY = None
 pub_key = None
+WATERMARK_PASSWORD_IMG = os.getenv('WATERMARK_PASSWORD_IMG')
+WATERMARK_PASSWORD_WM = os.getenv('WATERMARK_PASSWORD_WM')
+watermark_template = os.getenv('WATERMARK_TEMPLATE')
 
-def initialize_server_keys():
+def initialize_server():
     global SERVER_PRIVATE_KEY, pub_key
-    env_path = os.path.join(os.path.dirname(__file__), '.env')
     
     # Check if keys exist in .env
     priv_key = os.getenv('SERVER_PRIVATE_KEY')
@@ -56,8 +58,10 @@ def initialize_server_keys():
         # Load existing keys
         SERVER_PRIVATE_KEY = load_private_key_from_pem(priv_key)
 
+    logger.debug(f"WaterMark(password_img={WATERMARK_PASSWORD_IMG}, password_wm={WATERMARK_PASSWORD_WM})")
+
 # Initialize server keys before starting the app
-initialize_server_keys()
+initialize_server()
 
 app = FastAPI()
 v1_router = APIRouter(prefix="/api/v1")
@@ -140,27 +144,55 @@ async def update_user_key(
         logger.error(f"Unexpected error during key exchange: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Key exchange failed: {str(e)}")
 
-@v1_router.post("/embed-watermark/")
+@v1_router.post("/watermark/")
 async def embed_watermark_api(
-    image: UploadFile = File(...), 
-    watermark_text: str = Form(...)
+    image: UploadFile = File(...),
+    user_id: str = Form(...),
+    crypto_package: str = Form(...),
+    db: Session = Depends(get_db)
 ):
     """
-    API to embed a watermark into an image.
+    API to embed a watermark into an image with crypto package verification
     """
     input_path = os.path.join(TEMP_DIR, image.filename)
     output_path = os.path.join(TEMP_DIR, f"watermarked_{image.filename}")
 
-    # Save the uploaded image to the temp directory
     with open(input_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
 
-    # Embed the watermark
-    embed_watermark(input_path, watermark_text, output_path)
+    # Get user's public key from database
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user or not user.user_public_key:
+        raise HTTPException(status_code=404, detail="User not found or public key not set")
 
-    # Return the watermarked image
+    # Use global SERVER_PRIVATE_KEY
+    if not SERVER_PRIVATE_KEY:
+        raise HTTPException(status_code=500, detail="Server private key not initialized")
+
+    logger.debug(f"Verifying crypto package for user {user_id}")
+    # Convert private key to PEM format for verify_crypto_package
+    server_priv_pem = convert_private_key_to_pem(SERVER_PRIVATE_KEY)
+        
+    print(f"crypto_package: {crypto_package}")  # Debugging line
+    print(f"Server private key PEM: {server_priv_pem}...")  # Debugging line
+    is_valid = verify_crypto_package(
+            crypto_package,
+            server_priv_pem,
+            user.user_public_key,
+            input_path
+    )
+
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid crypto package")
+
+    # Create watermark text using template
+    watermark_text = watermark_template.format(user_id=user_id)
+        
+    # Embed watermark with global passwords
+    len = embed_watermark(input_path, watermark_text, output_path, WATERMARK_PASSWORD_IMG, WATERMARK_PASSWORD_WM)
+    print(f"Watermark length: {len}")  # Debugging line
+
     return FileResponse(output_path, media_type="image/jpeg", filename=f"watermarked_{image.filename}")
-
 
 @v1_router.post("/extract-watermark/")
 async def extract_watermark_api(
@@ -174,10 +206,10 @@ async def extract_watermark_api(
     # Save the uploaded image to the temp directory
     with open(input_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
-
-    # Extract the watermark with a fixed length of 215
-    len_wm = 215
-    extracted_text = extract_watermark(input_path, len_wm)
+    
+    # Extract the watermark with updated parameters
+    len_wm = 415
+    extracted_text = extract_watermark(input_path, WATERMARK_PASSWORD_IMG, WATERMARK_PASSWORD_WM, len_wm)
 
     # Return the extracted watermark text
     return JSONResponse(content={"watermark_text": extracted_text})
