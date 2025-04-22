@@ -1,4 +1,4 @@
-# tools.py
+# cryto_tools.py
 
 import os
 import json
@@ -291,3 +291,79 @@ def verify_file_integrity(file_path, original_hash):
         print(f"원본 해시:   {original_hash}")
         print(f"현재 해시:   {current_hash}")
         return False
+
+def prepare_crypto_package(
+    image_path: str,
+    user_id: str,
+    priv_pem: str,
+    server_pub_pem: str
+) -> dict:
+    """
+    이미지 보안 패키지 생성:
+      1. 파일 해시 계산 (SHA256)
+      2. 대칭 키 생성
+      3. payload 암호화 (AES-GCM)
+      4. payload 서명 (RSA-PSS)
+      5. 대칭 키 암호화 (RSA-OAEP)
+
+    Returns:
+        {
+          'file_hash': str,
+          'enc_payload': str,
+          'iv': str,
+          'tag': str,
+          'signature': str,
+          'enc_sym_key': str
+        }
+    """
+    # 1. 키 로드
+    user_priv = serialization.load_pem_private_key(
+        priv_pem.encode('utf-8'),
+        password=None
+    )
+    server_pub = serialization.load_pem_public_key(
+        server_pub_pem.encode('utf-8')
+    )
+
+    # 2. 파일 해시
+    file_hash = calculate_file_hash(image_path)
+
+    # 3. timestamp
+    timestamp = datetime.utcnow().isoformat()
+
+    # 4. 대칭키 생성
+    sym_key = generate_symmetric_key()
+
+    # 5. payload 암호화 (AES-GCM)
+    payload = {"user_id": user_id, "timestamp": timestamp, "file_hash": file_hash}
+    enc = encrypt_payload_aes_gcm(payload, sym_key)
+
+    # 6. payload 서명 (RSA-PSS)
+    to_sign = f"{user_id}{timestamp}".encode('utf-8')
+    signature = sign_message(to_sign, user_priv)
+
+    # 7. 대칭키 암호화 (RSA-OAEP)
+    encrypted_sym = rsa_encrypt_symmetric_key(sym_key, server_pub)
+    enc_sym_key = base64.b64encode(encrypted_sym).decode('utf-8')
+
+    return {
+        'file_hash':   file_hash,
+        'enc_payload': enc['ciphertext'],
+        'iv':          enc['iv'],
+        'tag':         enc['tag'],
+        'signature':   signature,
+        'enc_sym_key': enc_sym_key
+    }
+
+def serialize_crypto_package(package: dict) -> str:
+    """
+    crypto 패키지(dict)를 JSON 문자열로 직렬화합니다.
+    """
+    return json.dumps(package, sort_keys=True)
+
+
+def deserialize_crypto_package(package_json: str) -> dict:
+    """
+    JSON 문자열로부터 crypto 패키지를 복원하여 dict로 반환합니다.
+    """
+    return json.loads(package_json)
