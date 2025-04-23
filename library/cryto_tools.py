@@ -341,21 +341,15 @@ if __name__ == '__main__':
 
     from dotenv import load_dotenv
     # .env 파일 로드
-    load_dotenv()
+    load_dotenv(dotenv_path='test.env')
 
-    # .env에서 필요한 값 읽기
+    # 1. Client-Side
     user_id        = os.getenv('USER_ID')
     user_priv_pem  = os.getenv('USER_PRIVATE_KEY')
     server_pub_pem = os.getenv('SERVER_PUBLIC_KEY')
-    user_pub_pem  = os.getenv('USER_PUBLIC_KEY')
-    server_priv_pem = os.getenv('SERVER_PRIVATE_KEY')
-    # 이미지 경로를 하드코딩
-    image_path     = r"C:\GitHub\invisible-proof\client\watermarked_image.jpg"
-
-    if not all([user_id, user_priv_pem, server_pub_pem, image_path]):
-        raise RuntimeError(
-            'USER_ID, USER_PRIVATE_KEY, SERVER_PUBLIC_KEY 환경변수와 이미지 경로를 모두 제공해야 합니다.'
-        )
+    
+    # 이미지 경로
+    image_path     = "../resources/basket.jpg"
 
     # 패키지 생성 및 테스트
     package = prepare_crypto_package(
@@ -370,10 +364,12 @@ if __name__ == '__main__':
     package_json = serialize_crypto_package(package)
     print('Serialized JSON:', package_json)
 
-    # JSON 복원
-    #restored = deserialize_crypto_package(package_json)
-    #print('Deserialized package:', restored)
+    # 2. image와 package_json을 Server에 전송
 
-    # 검증 예시
+    # 3. Server-Side
+    # 검증
+    user_pub_pem  = os.getenv('USER_PUBLIC_KEY')
+    server_priv_pem = os.getenv('SERVER_PRIVATE_KEY')
+
     valid = verify_crypto_package(package_json, server_priv_pem, user_pub_pem, image_path)
     print('Package valid:', valid)
