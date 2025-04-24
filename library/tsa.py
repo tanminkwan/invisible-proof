@@ -83,7 +83,6 @@ def get_timestamp_from_freetsa(tsq_der, response_path='response.tsr'):
 
     return tsr_data
 
-
 def verify_timestamp(request_input, response_input,
                      ca_cert="cacert.pem", tsa_cert="tsa.crt"):
     """
@@ -177,6 +176,48 @@ def extract_timestamp_time(tsr_data: bytes) -> datetime:
     logging.info(f"genTime 추출 완료: {gen_time}")
     return gen_time
 
+def verify_tsr_matches_file(tsr_data: bytes, file_path: str) -> bool:
+    """
+    Verifies that the message imprint in the TSR corresponds to the hash of the given file.
+
+    Parameters:
+        tsr_data (bytes): tsr data.
+        file_path (str): Path to the original file to verify against.
+
+    Returns:
+        bool: True if the imprint matches the file's hash.
+
+    Raises:
+        ValueError: If the hash in the TSR does not match the file's hash.
+        FileNotFoundError: If tsr_path or file_path does not exist.
+        Any parsing error from asn1crypto if TSR is malformed.
+    """
+    # 1) Load TSR and parse TSTInfo
+    tsr = tsp.TimeStampResp.load(tsr_data)
+    tst_info = (
+        tsr['time_stamp_token']['content']
+           ['encap_content_info']['content']
+           .parse(spec=tsp.TSTInfo)
+    )
+
+    # 2) Extract algorithm and imprint from the TSR
+    algo = tst_info['message_imprint']['hash_algorithm']['algorithm'].native
+    imprint = tst_info['message_imprint']['hashed_message'].native
+
+    # 3) Calculate the file's digest using the same algorithm
+    with open(file_path, 'rb') as f:
+        file_data = f.read()
+    digest = getattr(hashlib, algo)(file_data).digest()
+
+    # 4) Compare and return or raise
+    if digest != imprint:
+        raise ValueError(
+            f"Hash mismatch:\n"
+            f"  TSR imprint: {imprint.hex()}\n"
+            f"  File digest: {digest.hex()}"
+        )
+    return True
+
 if __name__ == "__main__":
 
     # 로깅 설정 (stdout으로 출력되도록 설정)
@@ -199,10 +240,14 @@ if __name__ == "__main__":
         ca_cert="../resources/cacert.pem",
         tsa_cert="../resources/tsa.crt"
     )
+
     print(f"Verification return: {rtn}")
     if not rtn:
         print(f"검증 오류 세부 정보: {output}")
         exit(1)
+
+    rtn = verify_tsr_matches_file(tsr_data, file_path=image_path)
+    print(f"Verification Whether TSR matches the file: {rtn}")
 
     gen_time = extract_timestamp_time(tsr_data)
     print(f"최종 gen_time: {gen_time}")
