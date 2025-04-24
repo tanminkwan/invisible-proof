@@ -67,6 +67,12 @@ class WatermarkApp:
         # 이미지 경로
         self.image_path = None
 
+        self.user_id = os.getenv("USER_ID")
+        
+        if not self.user_id:
+            messagebox.showerror("Error", "USER_ID not found in .env")
+            return
+
     def upload_image(self):
         """이미지 업로드 및 표시"""
         file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.jpg;*.jpeg;*.png")])
@@ -89,11 +95,6 @@ class WatermarkApp:
             return
 
         try:
-            user_id = os.getenv("USER_ID")
-            if not user_id:
-                messagebox.showerror("Error", "USER_ID not found in .env")
-                return
-
             # Prepare crypto package
             user_priv_pem = os.getenv("USER_PRIVATE_KEY")
             server_pub_pem = os.getenv("SERVER_PUBLIC_KEY")
@@ -103,7 +104,7 @@ class WatermarkApp:
 
             crypto_package = prepare_crypto_package(
                 self.image_path,
-                user_id,
+                self.user_id,
                 user_priv_pem,
                 server_pub_pem
             )
@@ -111,7 +112,7 @@ class WatermarkApp:
             # Send request with crypto package
             files = {"image": open(self.image_path, "rb")}
             data = {
-                "user_id": user_id,
+                "user_id": self.user_id,
                 "crypto_package": json.dumps(crypto_package)
             }
 
@@ -137,9 +138,12 @@ class WatermarkApp:
             return
 
         files = {"image": open(self.image_path, "rb")}
+        data = {
+            "user_id": self.user_id
+        }
 
         try:
-            response = requests.post(f"{SERVER_URL}/extract-watermark/", files=files)
+            response = requests.post(f"{SERVER_URL}/extract-watermark/", files=files, data=data)
             if response.status_code == 200:
                 watermark_text = response.json().get("watermark_text", "No watermark found")
                 self.status_label.config(text=f"Status: Watermark Extracted: {watermark_text}", fg="green")
@@ -159,11 +163,6 @@ class WatermarkApp:
                 messagebox.showerror("Error", "Please enter API key")
                 return
 
-            user_id = os.getenv("USER_ID")
-            if not user_id:
-                messagebox.showerror("Error", "USER_ID not found in .env")
-                return
-
             # Generate client keys
             private_key, public_key = generate_rsa_key_pair()
             
@@ -174,10 +173,12 @@ class WatermarkApp:
             
             # Send to server using JSON body instead of query params
             response = requests.put(
-                f"{SERVER_URL}/user/{user_id}",
+                f"{SERVER_URL}/user/{self.user_id}",
                 json={
                     "app_key": app_key,
-                    "user_public_key": public_key_pem
+                    "user_public_key": public_key_pem,
+                    "password_img": 111111,
+                    "password_wm": 222222
                 }
             )
             

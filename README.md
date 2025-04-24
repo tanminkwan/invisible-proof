@@ -17,7 +17,7 @@ This project provides functionality to embed and extract watermarks in images us
 1. Open a terminal in `c:\GitHub\invisible-proof`.
 2. Run the server with:
    ```bash
-   uvicorn server.server:app --reload
+   uvicorn server.server:app --reload --log-level debug
    ```
    This starts the FastAPI server at http://127.0.0.1:8000.
 
