@@ -19,12 +19,18 @@ def extract_watermark(image_path, password_img, password_wm, len_wm=32):
     return wm_extract
 
 if __name__ == "__main__":
-    input_image = r"E:\faces_pjt\3races2.jpg"         # 원본 이미지 파일 (예: test.png)
+
+    # 이미지 경로
+    input_image = "../resources/basket.jpg"
+    
     output_image = "test_wm.jpg"       # 워터마크 삽입 후 저장할 파일
-    watermark_text = "Certified by Tanminkwan Foundation Owned by tiffanie"  # 워터마크 텍스트
+    watermark_text = 'Owned by {user_id}, certified by the Tanminkwan Foundation.'  # 워터마크 텍스트
+    watermark_len = len(watermark_text)-9
+    watermark_text.format(user_id='tiffanie')
+
     password_img = 123456
     password_wm = 654321
     
     len_wm = embed_watermark(input_image, watermark_text, output_image, password_img, password_wm)
     text = extract_watermark(output_image, password_img, password_wm, len_wm)
-    print(f"Extracted watermark: {len_wm} {text}")
+    print(f"Extracted watermark: {text} length : Return({len_wm}) 계산({len(watermark_text)*8 - 1})")
