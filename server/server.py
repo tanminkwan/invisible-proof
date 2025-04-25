@@ -63,7 +63,6 @@ async def update_user_key(
         watermark_text = watermark_template.format(user_id=user_id)
         watermark_length = len(watermark_text)*8 - 1
 
-
         if not password_img or not password_wm:
             logger.error(f"password_img and password_wm are mandatary. password_img : {password_img}, password_wm : {password_wm}")
             raise ValueError(f"password_img and password_wm are mandatary. password_img : {password_img}, password_wm : {password_wm}")

@@ -9,6 +9,7 @@ from library.cryto_tools import (
     verify_crypto_package
 )
 from server.database import engine, Base
+from storage import storage_client
 import os
 import logging
 
@@ -51,3 +52,11 @@ os.makedirs(temp_dir, exist_ok=True)
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+# S3 configuration
+storage = storage_client(
+    object_storage=os.getenv("OBJECT_STORAGE", "MINIO"),
+    endpoint=os.getenv("S3_ENDPOINT", "minio:9000"),
+    access_key=os.getenv("S3_ACCESS_KEY", "minioadmin"),
+    secret_key=os.getenv("S3_SECRET_KEY", "minioadmin"),
+    secure=os.getenv("S3_SECURE", "false").lower() == "true"
+    )
