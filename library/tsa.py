@@ -301,9 +301,9 @@ if __name__ == "__main__":
 
     #convert_crt_to_pem("../resources/tsa.crt", "tsa.pem")
 
-    tsq_der = create_rfc3161_timestamp_request(image_path, request_path=None)
+    tsq_der = create_rfc3161_timestamp_request(image_path, request_path='request.tsq')
 
-    tsr_data = get_timestamp_from_freetsa(tsq_der, response_path=None)
+    tsr_data = get_timestamp_from_freetsa(tsq_der, response_path='response.tsr')
 
     rtn, output = verify_timestamp(
         request_input=tsq_der, response_input=tsr_data,
