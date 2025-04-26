@@ -1,6 +1,8 @@
 # tsa.py
 import hashlib
 from asn1crypto import tsp, algos, core
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 import subprocess
 import requests
 import logging
@@ -10,6 +12,71 @@ import sys
 import os
 from datetime import datetime, timezone
 
+def convert_crt_to_pem(src: str,
+                       dst: str | None = None,
+                       openssl_bin: str = "openssl") -> str:
+    """
+    Convert an X.509 certificate file (*.crt, DER or PEM) to a PEM-encoded file,
+    using only str paths (no pathlib).
+
+    Parameters
+    ----------
+    src : str
+        Source *.crt file path.
+    dst : str | None
+        • None → write alongside `src`, extension changed to .pem  
+        • Existing directory path → write <src-stem>.pem in that directory  
+        • File path → exact location to write
+    openssl_bin : str
+        Name or absolute path of the openssl binary (fallback only).
+
+    Returns
+    -------
+    str
+        Absolute path of the resulting *.pem file.
+
+    Raises
+    ------
+    ValueError
+        If both the Python and openssl conversion attempts fail.
+    """
+    src = os.path.abspath(os.path.expanduser(src))
+
+    # ───── determine output location ─────
+    if dst is None:
+        dst = os.path.splitext(src)[0] + ".pem"
+    else:
+        dst = os.path.abspath(os.path.expanduser(dst))
+        if os.path.isdir(dst):                           # directory → file inside
+            base = os.path.basename(os.path.splitext(src)[0] + ".pem")
+            dst = os.path.join(dst, base)
+
+    # ───── first try: python-cryptography ─────
+    try:
+        with open(src, "rb") as f:
+            data = f.read()
+
+        try:  # already PEM?
+            x509.load_pem_x509_certificate(data)
+            logging.info("'%s' is already PEM – copying to '%s'.", src, dst)
+            with open(dst, "wb") as f:
+                f.write(data)
+            return dst
+        except ValueError:
+            cert = x509.load_der_x509_certificate(data)      # DER → PEM
+            pem_bytes = cert.public_bytes(serialization.Encoding.PEM)
+            with open(dst, "wb") as f:
+                f.write(pem_bytes)
+            logging.info("Converted DER → PEM with cryptography: '%s' → '%s'.",
+                        src, dst)
+            return dst
+
+    except ModuleNotFoundError:
+        logging.warning("cryptography not installed – falling back to openssl.")
+    except ValueError as e:
+        logging.warning("cryptography failed to parse '%s': %s – falling back to openssl.",
+                       src, e)
+        
 def create_rfc3161_timestamp_request(file_path, hash_algorithm='sha256', request_path='request.tsq'):
     """
     파일 해시를 기반으로 RFC3161 Time Stamp 요청을 생성하고, 옵션에 따라 요청을 파일로 저장합니다.
@@ -232,6 +299,8 @@ if __name__ == "__main__":
     print("=== RFC3161 타임스탬프 생성 및 검증 시작 ===")
     image_path = "../resources/basket.jpg"
 
+    #convert_crt_to_pem("../resources/tsa.crt", "tsa.pem")
+
     tsq_der = create_rfc3161_timestamp_request(image_path, request_path=None)
 
     tsr_data = get_timestamp_from_freetsa(tsq_der, response_path=None)
@@ -239,7 +308,7 @@ if __name__ == "__main__":
     rtn, output = verify_timestamp(
         request_input=tsq_der, response_input=tsr_data,
         ca_cert="../resources/cacert.pem",
-        tsa_cert="../resources/tsa.crt"
+        tsa_cert="../resources/tsa.pem"
     )
 
     print(f"Verification return: {rtn}")

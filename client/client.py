@@ -1,4 +1,3 @@
-# client.py
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -8,6 +7,7 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import requests
 import json
+import logging
 from dotenv import load_dotenv, set_key
 from library.cryto_tools import (
     generate_rsa_key_pair,
@@ -16,15 +16,22 @@ from library.cryto_tools import (
     decrypt_server_public_key,
     prepare_crypto_package
 )
+import base64
 
 # Load environment variables
 load_dotenv()
 
-# FastAPI 서버 URL
-SERVER_URL = "http://127.0.0.1:8000/api/v1"
+# 로깅 설정
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    stream=sys.stdout  # 파일 핸들러 제거하고 stdout으로만 출력
+)
+logger = logging.getLogger(__name__)
 
 class WatermarkApp:
-    def __init__(self, root):
+    def __init__(self, root, user_id=None, server_url=None):
         self.root = root
         self.root.title("Watermark Application")
 
@@ -67,7 +74,8 @@ class WatermarkApp:
         # 이미지 경로
         self.image_path = None
 
-        self.user_id = os.getenv("USER_ID")
+        self.user_id = user_id
+        self.server_url = server_url
         
         if not self.user_id:
             messagebox.showerror("Error", "USER_ID not found in .env")
@@ -95,6 +103,7 @@ class WatermarkApp:
             return
 
         try:
+            logger.info("Starting watermark embedding process")
             # Prepare crypto package
             user_priv_pem = os.getenv("USER_PRIVATE_KEY")
             server_pub_pem = os.getenv("SERVER_PUBLIC_KEY")
@@ -116,18 +125,39 @@ class WatermarkApp:
                 "crypto_package": json.dumps(crypto_package)
             }
 
-            response = requests.post(f"{SERVER_URL}/watermark/", files=files, data=data)
+            response = requests.post(f"{self.server_url}/watermark/", files=files, data=data)
             
             if response.status_code == 200:
-                with open("watermarked_image.jpg", "wb") as f:
-                    f.write(response.content)
-                self.status_label.config(text="Status: Watermark Embedded Successfully", fg="green")
-                messagebox.showinfo("Success", "Watermark embedded successfully! Saved as 'watermarked_image.jpg'.")
+                response_data = response.json()
+                logger.info("Server Response Data:")
+                logger.info(f"  Timestamp: {response_data['gen_time']}")
+                logger.info(f"  Filename: {response_data['filename']}")
+                logger.info(f"  TSQ Length: {len(response_data['tsq'])} bytes")
+                logger.info(f"  TSR Length: {len(response_data['tsr'])} bytes")
+                logger.info(f"  TSA Cert Available: {bool(response_data['tsa_cert'])}")
+                logger.info(f"  TSA CA Available: {bool(response_data['tsa_ca'])}")
+                
+                # Save image from base64
+                image_bytes = base64.b64decode(response_data["image"])
+                with open(response_data['filename'], "wb") as f:
+                    f.write(image_bytes)
+                logger.info("Watermarked image saved successfully")
+                    
+                gen_time = response_data["gen_time"]
+                status_text = f"Status: Watermark Embedded Successfully\nTimestamp: {gen_time}"
+                self.status_label.config(text=status_text, fg="green")
+                messagebox.showinfo("Success", 
+                    f"Watermark embedded successfully!\n"
+                    f"Timestamp: {gen_time}\n"
+                    f"Saved as '{response_data['filename']}'")
             else:
+                logger.error(f"Server returned error: {response.status_code}")
+                logger.error(f"Error details: {response.text}")
                 self.status_label.config(text="Status: Failed to Embed Watermark", fg="red")
                 messagebox.showerror("Error", f"Failed to embed watermark: {response.text}")
 
         except Exception as e:
+            logger.exception("Error during watermark embedding")
             self.status_label.config(text="Status: Error Occurred", fg="red")
             messagebox.showerror("Error", f"An error occurred: {e}")
 
@@ -137,27 +167,32 @@ class WatermarkApp:
             messagebox.showerror("Error", "No image uploaded!")
             return
 
+        logger.info("Starting watermark extraction process")
         files = {"image": open(self.image_path, "rb")}
         data = {
             "user_id": self.user_id
         }
 
         try:
-            response = requests.post(f"{SERVER_URL}/extract-watermark/", files=files, data=data)
+            response = requests.post(f"{self.server_url}/extract-watermark/", files=files, data=data)
             if response.status_code == 200:
                 watermark_text = response.json().get("watermark_text", "No watermark found")
+                logger.info(f"Extracted watermark: {watermark_text}")
                 self.status_label.config(text=f"Status: Watermark Extracted: {watermark_text}", fg="green")
                 messagebox.showinfo("Extracted Watermark", f"Watermark: {watermark_text}")
             else:
+                logger.error(f"Extraction failed with status code: {response.status_code}")
                 self.status_label.config(text="Status: Failed to Extract Watermark", fg="red")
                 messagebox.showerror("Error", f"Failed to extract watermark: {response.text}")
         except Exception as e:
+            logger.exception("Error during watermark extraction")
             self.status_label.config(text="Status: Error Occurred", fg="red")
             messagebox.showerror("Error", f"An error occurred: {e}")
 
     def exchange_keys(self):
         """Perform key exchange with server"""
         try:
+            logger.info("Starting key exchange process")
             app_key = self.api_entry.get().strip()
             if not app_key:
                 messagebox.showerror("Error", "Please enter API key")
@@ -173,7 +208,7 @@ class WatermarkApp:
             
             # Send to server using JSON body instead of query params
             response = requests.put(
-                f"{SERVER_URL}/user/{self.user_id}",
+                f"{self.server_url}/user/{self.user_id}",
                 json={
                     "app_key": app_key,
                     "user_public_key": public_key_pem,
@@ -187,18 +222,25 @@ class WatermarkApp:
                 sp_public_key_pem = response.json()["sp_public_key"]
                 set_key(env_path, "SERVER_PUBLIC_KEY", sp_public_key_pem)
                 
+                logger.info("Key exchange successful")
                 self.status_label.config(text="Status: Key Exchange Successful", fg="green")
                 messagebox.showinfo("Success", "Key exchange completed successfully")
             else:
+                logger.error(f"Key exchange failed with status code: {response.status_code}")
                 self.status_label.config(text="Status: Key Exchange Failed", fg="red")
                 messagebox.showerror("Error", f"Key exchange failed: {response.text}")
 
         except Exception as e:
+            logger.exception("Error during key exchange")
             self.status_label.config(text="Status: Key Exchange Error", fg="red")
             messagebox.showerror("Error", f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
+
+    user_id = os.getenv("USER_ID")
+    server_url = os.getenv("SERVER_URL")
+
     root = tk.Tk()
     # Set window size and position it at the center of the screen
     window_width = 800
@@ -209,5 +251,5 @@ if __name__ == "__main__":
     center_y = int(screen_height/2 - window_height/2)
     root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
     root.resizable(False, False)  # Prevent window resizing
-    app = WatermarkApp(root)
+    app = WatermarkApp(root, user_id=user_id, server_url=server_url)
     root.mainloop()

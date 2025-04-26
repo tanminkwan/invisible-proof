@@ -11,10 +11,17 @@ from library.cryto_tools import (
     load_private_key_from_pem,
     verify_crypto_package
 )
+from library.tsa import (
+    create_rfc3161_timestamp_request,
+    get_timestamp_from_freetsa,
+    extract_timestamp_time,
+    verify_tsr_matches_file
+)
 import shutil
 import os
 import uuid
 import hashlib
+import base64
 from server import watermark_template, watermark_template_len, public_key_pem, \
     private_key_pem, temp_dir, logger, app
 
@@ -147,7 +154,35 @@ async def embed_watermark_api(
     len = embed_watermark(input_path, watermark_text, output_path, user.password_img, user.password_wm)
     logger.debug(f"Watermark length: {len}")  # Debugging line
 
-    return FileResponse(output_path, media_type="image/jpeg", filename=f"watermarked_{image.filename}")
+    # Generate timestamp
+    tsq_der = create_rfc3161_timestamp_request(output_path, request_path=None)
+    tsr_data = get_timestamp_from_freetsa(tsq_der, response_path=None)
+    gen_time = extract_timestamp_time(tsr_data)
+
+    # Read CA and TSA certificates
+    ca_cert_path = os.path.join("resources", "cacert.pem")
+    tsa_cert_path = os.path.join("resources", "tsa.pem")
+
+    with open(ca_cert_path, "r") as f:
+        tsa_ca = f.read()
+    with open(tsa_cert_path, "r") as f:
+        tsa_cert = f.read()
+
+    # Return JSON response with image data and TSA information
+    with open(output_path, "rb") as f:
+        image_data = f.read()
+
+    response_data = {
+        "image": base64.b64encode(image_data).decode('utf-8'),
+        "filename": f"watermarked_{image.filename}",
+        "tsq": base64.b64encode(tsq_der).decode('utf-8'),
+        "tsr": base64.b64encode(tsr_data).decode('utf-8'),
+        "tsa_ca": tsa_ca,
+        "tsa_cert": tsa_cert,
+        "gen_time": gen_time.isoformat() + "Z"
+    }
+
+    return JSONResponse(content=response_data)
 
 @v1_router.post("/extract-watermark/")
 async def extract_watermark_api(

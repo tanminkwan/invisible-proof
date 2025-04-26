@@ -10,7 +10,9 @@ This project provides functionality to embed and extract watermarks in images us
 - FastAPI (`pip install fastapi`)
 - Uvicorn (`pip install uvicorn`)
 - cryptography (`pip install cryptography`)
-
+- python-jose
+- asn1crypto
+- 
 ## How to Run
 
 ### Running the Server
