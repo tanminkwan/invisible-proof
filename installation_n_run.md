@@ -48,7 +48,7 @@ resources/
    ```
 2. FastAPI 서버 시작:
    ```bash
-   uvicorn server.server:app --reload
+   uvicorn server.server:app --reload --log-level debug
    ```
 
 ---
@@ -71,13 +71,21 @@ resources/
 1. **사용자 등록**:
    - 클라이언트에서 API 키를 발급받습니다.
    ```bash
+   # Linux
    curl -X POST "http://localhost:8000/api/v1/user" \
         -H "Content-Type: application/json" \
-        -d '{"user_id":"your-username"}'
+        -d '{"user_id":"tiffanie"}'
+ 
+   # Windows (PowerShell)
+   curl.exe -X POST "http://localhost:8000/api/v1/user" -H "Content-Type: application/json" -d '{\"user_id\":\"tiffanie\"}'
    ```
-   - 서버는 사용자 ID와 함께 고유한 API 키를 반환합니다.
+   - 서버는 사용자 ID와 함께 고유한 API 키(`user_api_key`)를 반환합니다.
+   - 출력 예
+   ```bash
+   {"user_id":"tiffanie","user_api_key":"ebd1ceeb-f769-4f82-b3a9-cbb91ec355af","create_dt":"2025-04-27T09:40:34"}
+   ```
 
-2. **키 교환**:
+1. **키 교환**:
    - 클라이언트 GUI에서 발급받은 API 키를 입력하고 "서버와 Key 교환" 버튼을 클릭합니다.
    - 클라이언트는 RSA 키 쌍을 생성하고, 공개키를 서버로 전송합니다.
    - 서버는 사용자 공개키를 저장하고, 서버 공개키를 클라이언트로 반환합니다.

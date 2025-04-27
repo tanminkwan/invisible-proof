@@ -77,6 +77,9 @@ class WatermarkApp:
 
         self.user_id = user_id
         self.server_url = server_url
+
+        self.user_priv_pem = os.getenv("USER_PRIVATE_KEY")
+        self.server_pub_pem = os.getenv("SERVER_PUBLIC_KEY")
         
         if not self.user_id:
             messagebox.showerror("Error", "USER_ID not found in .env")
@@ -105,18 +108,16 @@ class WatermarkApp:
 
         try:
             logger.info("Starting watermark embedding process")
-            # Prepare crypto package
-            user_priv_pem = os.getenv("USER_PRIVATE_KEY")
-            server_pub_pem = os.getenv("SERVER_PUBLIC_KEY")
-            if not all([user_priv_pem, server_pub_pem]):
-                messagebox.showerror("Error", "Missing required keys in .env")
+            # Use class attributes for keys
+            if not all([self.user_priv_pem, self.server_pub_pem]):
+                messagebox.showerror("Error", "Missing required keys. Perform key exchange first.")
                 return
 
             crypto_package = prepare_crypto_package(
                 self.image_path,
                 self.user_id,
-                user_priv_pem,
-                server_pub_pem
+                self.user_priv_pem,
+                self.server_pub_pem
             )
 
             # Send request with crypto package
@@ -215,7 +216,8 @@ class WatermarkApp:
             
             # Convert keys to PEM format and save to .env
             env_path = ".env"
-            set_key(env_path, "USER_PRIVATE_KEY", convert_private_key_to_pem(private_key))
+            user_private_key_pem = convert_private_key_to_pem(private_key)
+            set_key(env_path, "USER_PRIVATE_KEY", user_private_key_pem)
             public_key_pem = convert_public_key_to_pem(public_key)
             
             # Send to server using JSON body instead of query params
@@ -234,6 +236,10 @@ class WatermarkApp:
                 sp_public_key_pem = response.json()["sp_public_key"]
                 set_key(env_path, "SERVER_PUBLIC_KEY", sp_public_key_pem)
                 
+                # Update class attributes for keys
+                self.user_priv_pem = user_private_key_pem
+                self.server_pub_pem = sp_public_key_pem
+
                 logger.info("Key exchange successful")
                 self.status_label.config(text="Status: Key Exchange Successful", fg="green")
                 messagebox.showinfo("Success", "Key exchange completed successfully")
