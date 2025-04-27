@@ -17,6 +17,7 @@ from library.tsa import (
     extract_timestamp_time,
     verify_tsr_matches_file
 )
+from library.evidence_jws import build_evidence_json, sign_evidence
 import shutil
 import os
 import uuid
@@ -115,71 +116,103 @@ async def embed_watermark_api(
     db: Session = Depends(get_db)
 ):
     """
-    API to embed a watermark into an image with crypto package verification
+    워터마크 이미지 삽입 및 증거 토큰 생성 API
+
+    Parameters
+    ----------
+    image : UploadFile
+        워터마크를 삽입할 원본 이미지 파일
+    user_id : str 
+        인증된 사용자 ID
+    crypto_package : str
+        클라이언트가 생성한 암호화 패키지 (JSON)
+    db : Session
+        데이터베이스 세션
+
+    Returns
+    -------
+    JSONResponse
+        {
+            "image": base64로 인코딩된 워터마크 이미지,
+            "evidence_token": JWS 서명된 증거 토큰
+        }
+
+    Raises
+    ------
+    HTTPException(404)
+        사용자를 찾을 수 없거나 공개키가 설정되지 않은 경우
+    HTTPException(400) 
+        잘못된 crypto_package
+    HTTPException(500)
+        서버 개인키가 초기화되지 않은 경우
     """
+    # 1. 업로드된 이미지를 임시 파일로 저장
     input_path = os.path.join(temp_dir, image.filename)
     output_path = os.path.join(temp_dir, f"watermarked_{image.filename}")
-
     with open(input_path, "wb") as buffer:
         shutil.copyfileobj(image.file, buffer)
 
-    # Get user's public key from database
+    # 2. 사용자 정보 검증
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user or not user.user_public_key:
         raise HTTPException(status_code=404, detail="User not found or public key not set")
 
-    # Use global SERVER_PRIVATE_KEY
+    # 3. 서버 개인키 확인
     if not private_key_pem:
         raise HTTPException(status_code=500, detail="Server private key not initialized")
 
+    # 4. 암호화 패키지 검증
     logger.debug(f"Verifying crypto package for user {user_id}")
-    # Convert private key to PEM format for verify_crypto_package
-            
-    logger.debug(f"crypto_package: {crypto_package}")  # Debugging line
-    logger.debug(f"Server private key PEM: {private_key_pem}...")  # Debugging line
+    logger.debug(f"crypto_package: {crypto_package}")
     is_valid = verify_crypto_package(
             crypto_package,
             private_key_pem,
             user.user_public_key,
             input_path
     )
-
     if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid crypto package")
 
-    # Create watermark text using template
+    # 5. 워터마크 텍스트 생성 및 삽입
     watermark_text = watermark_template.format(user_id=user_id)
-        
-    # Embed watermark with global passwords
-    len = embed_watermark(input_path, watermark_text, output_path, user.password_img, user.password_wm)
-    logger.debug(f"Watermark length: {len}")  # Debugging line
+    len = embed_watermark(input_path, watermark_text, output_path, 
+                         user.password_img, user.password_wm)
+    logger.debug(f"Watermark length: {len}")
 
-    # Generate timestamp
+    # 6. RFC 3161 타임스탬프 생성
     tsq_der = create_rfc3161_timestamp_request(output_path, request_path=None)
     tsr_data = get_timestamp_from_freetsa(tsq_der, response_path=None)
     gen_time = extract_timestamp_time(tsr_data)
 
-    # Read CA and TSA certificates
+    # 7. CA/TSA 인증서 경로
     ca_cert_path = os.path.join("resources", "cacert.pem")
     tsa_cert_path = os.path.join("resources", "tsa.pem")
 
-    with open(ca_cert_path, "r") as f:
-        tsa_ca = f.read()
-    with open(tsa_cert_path, "r") as f:
-        tsa_cert = f.read()
-
-    # Return JSON response with image data and TSA information
+    # 8. 워터마크 이미지 처리 및 해시 계산
     with open(output_path, "rb") as f:
+        file_size = os.path.getsize(output_path)
         image_data = f.read()
+        file_sha256 = hashlib.sha256(image_data).hexdigest()
 
+    # 9. 증거 JSON 생성 및 JWS 서명
+    evidence = build_evidence_json(
+        user_id=user_id,
+        watermarked_url=f"watermarked_{image.filename}",
+        file_sha256=file_sha256,
+        file_size=file_size,
+        wm_text=watermark_text,
+        tsq_der=tsq_der,
+        tsr_der=tsr_data,
+        tsa_pem=tsa_cert_path,
+        cacert_pem=ca_cert_path,
+        gen_time=gen_time.isoformat() + "Z"
+    )
+    evidence_token = sign_evidence(evidence, private_key_pem)
+
+    # 10. 응답 데이터 구성
     response_data = {
         "image": base64.b64encode(image_data).decode('utf-8'),
-        "filename": f"watermarked_{image.filename}",
-        "tsq": base64.b64encode(tsq_der).decode('utf-8'),
-        "tsr": base64.b64encode(tsr_data).decode('utf-8'),
-        "tsa_ca": tsa_ca,
-        "tsa_cert": tsa_cert,
-        "gen_time": gen_time.isoformat() + "Z"
+        "evidence_token": evidence_token
     }
 
     return JSONResponse(content=response_data)

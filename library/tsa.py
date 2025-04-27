@@ -13,8 +13,7 @@ import os
 from datetime import datetime, timezone
 
 def convert_crt_to_pem(src: str,
-                       dst: str | None = None,
-                       openssl_bin: str = "openssl") -> str:
+                       dst: str | None = None) -> str:
     """
     Convert an X.509 certificate file (*.crt, DER or PEM) to a PEM-encoded file,
     using only str paths (no pathlib).
@@ -27,8 +26,6 @@ def convert_crt_to_pem(src: str,
         • None → write alongside `src`, extension changed to .pem  
         • Existing directory path → write <src-stem>.pem in that directory  
         • File path → exact location to write
-    openssl_bin : str
-        Name or absolute path of the openssl binary (fallback only).
 
     Returns
     -------

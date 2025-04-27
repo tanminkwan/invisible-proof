@@ -14,10 +14,26 @@ from cryptography.hazmat.primitives import serialization
 # ─────────────────────────────────────────────────────────────
 # 1) 유틸 – DER → Base64URL 변환
 # ─────────────────────────────────────────────────────────────
-def der_to_b64url(path: str | Path) -> str:
-    """파일(DER/CRT 등)을 Base64URL(str) 로 반환"""
-    raw = Path(path).read_bytes()
+def der_to_b64url(data: str | Path | bytes) -> str:
+    """
+    Convert DER/CRT data to Base64URL string
+    Accepts either a file path or raw bytes
+    """
+    if isinstance(data, (str, Path)):
+        raw = Path(data).read_bytes()
+    elif isinstance(data, bytes):
+        raw = data
+    else:
+        raise TypeError("data must be a file path or bytes")
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+def get_pem_content(data: str | Path) -> str:
+    """Get PEM content from either file path or PEM string"""
+    if isinstance(data, (str, Path)):
+        if data.startswith('-----BEGIN'):
+            return data
+        return Path(data).read_text()
+    raise TypeError("data must be a file path or PEM string")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -28,15 +44,15 @@ def build_evidence_json(user_id: str,
                         file_sha256: str,
                         file_size: int,
                         wm_text: str,
-                        tsq_der: str | Path,
-                        tsr_der: str | Path,
+                        tsq_der: str | Path | bytes,
+                        tsr_der: str | Path | bytes,
                         tsa_pem: str | Path,
                         cacert_pem: str | Path,
                         gen_time: str) -> dict:
     return {
-        "iss": "copyright-server.example",
+        "iss": "copyright-tanminkwan.org",
         "sub": user_id,
-        "iat": int(time.time()),            # UNIX epoch
+        "iat": int(time.time()),
         "version": "1.0",
         "evidence": {
             "file_sha256":  file_sha256,
@@ -47,8 +63,8 @@ def build_evidence_json(user_id: str,
             "timestamp": {
                 "tsq":        der_to_b64url(tsq_der),
                 "tsr":        der_to_b64url(tsr_der),
-                "tsa_pem":    Path(tsa_pem).read_text(),
-                "cacert_pem": Path(cacert_pem).read_text(),
+                "tsa_pem":    get_pem_content(tsa_pem),
+                "cacert_pem": get_pem_content(cacert_pem),
                 "gen_time":   gen_time
             }
         }

@@ -16,6 +16,7 @@ from library.cryto_tools import (
     decrypt_server_public_key,
     prepare_crypto_package
 )
+from library.evidence_jws import decode_evidence_token, verify_evidence_token
 import base64
 
 # Load environment variables
@@ -129,27 +130,38 @@ class WatermarkApp:
             
             if response.status_code == 200:
                 response_data = response.json()
-                logger.info("Server Response Data:")
-                logger.info(f"  Timestamp: {response_data['gen_time']}")
-                logger.info(f"  Filename: {response_data['filename']}")
-                logger.info(f"  TSQ Length: {len(response_data['tsq'])} bytes")
-                logger.info(f"  TSR Length: {len(response_data['tsr'])} bytes")
-                logger.info(f"  TSA Cert Available: {bool(response_data['tsa_cert'])}")
-                logger.info(f"  TSA CA Available: {bool(response_data['tsa_ca'])}")
+                evidence_token = response_data["evidence_token"]
                 
+                # Decode and log evidence token contents
+                evidence_payload = decode_evidence_token(evidence_token)
+                logger.info("Evidence Token Payload:")
+                logger.info(json.dumps(evidence_payload, indent=2))
+                
+                # Verify signature
+                server_pub_pem = os.getenv("SERVER_PUBLIC_KEY")
+                is_valid = verify_evidence_token(evidence_token, server_pub_pem)
+                logger.info(f"Evidence Token Signature Valid: {is_valid}")
+                
+                if not is_valid:
+                    logger.error("Evidence token signature verification failed!")
+                    self.status_label.config(text="Status: Invalid Evidence Signature", fg="red")
+                    messagebox.showerror("Error", "Evidence token signature verification failed!")
+                    return
+
                 # Save image from base64
                 image_bytes = base64.b64decode(response_data["image"])
-                with open(response_data['filename'], "wb") as f:
+                filename = evidence_payload["evidence"]["image_url"]
+                with open(filename, "wb") as f:
                     f.write(image_bytes)
                 logger.info("Watermarked image saved successfully")
                     
-                gen_time = response_data["gen_time"]
+                gen_time = evidence_payload["evidence"]["timestamp"]["gen_time"]
                 status_text = f"Status: Watermark Embedded Successfully\nTimestamp: {gen_time}"
                 self.status_label.config(text=status_text, fg="green")
                 messagebox.showinfo("Success", 
                     f"Watermark embedded successfully!\n"
                     f"Timestamp: {gen_time}\n"
-                    f"Saved as '{response_data['filename']}'")
+                    f"Saved as '{filename}'")
             else:
                 logger.error(f"Server returned error: {response.status_code}")
                 logger.error(f"Error details: {response.text}")
