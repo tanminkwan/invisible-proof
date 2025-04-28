@@ -62,9 +62,6 @@ sequenceDiagram
     TSA-->>Server: 타임스탬프 응답
     Server->>Server: Evidence JSON 생성 → JWS 서명
     Server-->>Client: 워터마크 이미지 & JWS 증거 토큰
-
-    Client->>Server: 워터마크 추출 (POST /api/v1/extract-watermark)
-    Server-->>Client: 추출된 워터마크 텍스트
 ```
 
 ---
@@ -79,15 +76,16 @@ sequenceDiagram
   "iat": 1714024800,
   "version": "1.0",
   "evidence": {
-    "file_sha256": "ab34…",
-    "file_size": 512034,
+    "file_sha256": "088ccc0e828587baa80e9fdcabbea22e863801866a9bfb1ba8fd99180ae85e09",
+    "file_size": 279264,
     "wm_algorithm": "blind_watermark-v1",
-    "wm_text": "Owned by user_id …",
-    "image_url": "s3://…/watermarked_x.jpg",
+    "wm_text": "Owned by tiffanie, certified by the Tanminkwan Foundation.",
+    "image_url": "s3://…/watermarked_basket.jpg",
     "timestamp": {
       "tsq": "<Base64-DER>",
       "tsr": "<Base64-DER>",
-      "tsa_chain": "<PEM bundle>",
+      "tsa_pem": "-----BEGIN CERTIFICATE-----\nMIIIATCCBemGVMREwDwYD...",
+      "cacert_pem": "-----BEGIN CERTIFICATE-----\nMIIH/zCCBeIGVMREwDwYD...",
       "gen_time": "2025-04-25T11:22:33Z"
     }
   }
