@@ -21,7 +21,7 @@ Invisible Proof는 디지털 이미지에 **보이지 않는 워터마크**와
 
 ### 📸 디지털 자산 소유권을 어떻게 증명할까?
 - 시각적 워터마크는 쉽게 지워지거나 이미지 품질을 손상시킵니다.
-- **Invisible Proof**는 `blind_watermark`(https://github.com/guofei9987/blind_watermark)기반의 **보이지 않는 워터마크**를 사용해 품질 손상 없이 소유권 정보를 각인합니다.
+- **Invisible Proof**는 `blind_watermark`(https://github.com/guofei9987/blind_watermark) 기반의 **보이지 않는 워터마크**를 사용해 품질 손상 없이 소유권 정보를 각인합니다.
 
 ### ⏰ "언제"를 법적으로 증명하고 싶다
 - 이미지가 언제 존재했는지 증명할 **신뢰할 만한 타임스탬프**가 필요합니다.
